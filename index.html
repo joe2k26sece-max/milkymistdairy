@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milky Mist Dairy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="overlay"></div>
+
+    <header>
+        <img src="logo.png" alt="Milky Mist Logo" class="logo">
+        <h1 class="brand-title">Milky Mist Dairy</h1>
+    </header>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel">
+            <h2>Admin Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" required>
+                </div>
+                <div class="form-group password-group">
+                    <label for="loginPassword">Password</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="loginPassword" required>
+                        <button type="button" id="togglePasswordBtn" class="toggle-password"
+                            aria-label="Toggle password visibility">👁️</button>
+                    </div>
+                </div>
+                <p id="loginError" style="color: #e74c3c; font-size: 0.9rem; display: none;">Invalid credentials!</p>
+                <button type="submit" style="margin-top: 10px;">Login</button>
+                <button type="button" id="closeLoginBtn" class="cancel-btn">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <main>
+        <!-- USER VIEW -->
+        <div id="userView">
+            <div class="glass-panel">
+                <h2>Available Products</h2>
+                <div class="product-list" id="userProductList">
+                    <!-- Products will be injected here via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ADMIN VIEW (Hidden by default) -->
+        <div id="adminView" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="margin: 0; color: white; text-align: left;">Dashboard</h2>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+            <div class="glass-panel">
+                <h2>Add New Product</h2>
+                <form id="productForm">
+                    <div class="form-group">
+                        <label for="productName">Product Name</label>
+                        <input type="text" id="productName" placeholder="e.g., Fresh Milk, Paneer" required>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="form-group">
+                            <label for="quantity">Quantity</label>
+                            <input type="number" id="quantity" placeholder="e.g., 500" step="any" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="unit">Unit</label>
+                            <select id="unit">
+                                <option value="ml">ml</option>
+                                <option value="L">Liters</option>
+                                <option value="g">grams</option>
+                                <option value="kg">kg</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Price (₹)</label>
+                        <input type="number" id="price" placeholder="e.g., 40" step="any" required>
+                    </div>
+
+                    <button type="submit">Add Product</button>
+                </form>
+            </div>
+
+            <div class="glass-panel">
+                <h2>Manage Products</h2>
+                <div class="product-list" id="adminProductList">
+                    <!-- Products will be injected here via JS -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="contact-info">
+            <p><strong>Stall Owner:</strong> Ramesh Kumar</p>
+            <p><strong>Contact:</strong> +91 98765 43210</p>
+        </div>
+        <div class="dev-credit">
+            <p>Developed with ❤️ by <a href="https://example-developer.com" target="_blank"
+                    rel="noopener noreferrer">TechNova Solutions</a></p>
+            <p id="showLoginBtn" style="cursor: pointer;">milymist</p>
+        </div>
+    </footer>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAOSz8oOJYycuXvMudiQ_UmlmH07XPTWds",
+            authDomain: "milky-mist-dairy-2449f.firebaseapp.com",
+            projectId: "milky-mist-dairy-2449f",
+            storageBucket: "milky-mist-dairy-2449f.firebasestorage.app",
+            messagingSenderId: "946200315902",
+            appId: "1:946200315902:web:99d0492fe8c2263ed7e2af",
+            measurementId: "G-1CWVVSNJ5M"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const userProductList = document.getElementById('userProductList');
+            const adminProductList = document.getElementById('adminProductList');
+            const productForm = document.getElementById('productForm');
+
+            // View switching elements
+            const showLoginBtn = document.getElementById('showLoginBtn');
+            const loginModal = document.getElementById('loginModal');
+            const loginForm = document.getElementById('loginForm');
+            const closeLoginBtn = document.getElementById('closeLoginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const loginError = document.getElementById('loginError');
+            const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+            const loginPasswordInput = document.getElementById('loginPassword');
+
+            const userView = document.getElementById('userView');
+            const adminView = document.getElementById('adminView');
+
+            let products = [];
+
+            async function hashSHA256(text) {
+                const msgBuffer = new TextEncoder().encode(text);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            }
+
+            // --- LOGIN LOGIC ---
+            showLoginBtn.addEventListener('click', () => {
+                loginModal.style.display = 'flex';
+            });
+
+            togglePasswordBtn.addEventListener('click', () => {
+                const type = loginPasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                loginPasswordInput.setAttribute('type', type);
+                togglePasswordBtn.textContent = type === 'password' ? '👁️' : '🙈';
+            });
+
+            closeLoginBtn.addEventListener('click', () => {
+                loginModal.style.display = 'none';
+                loginForm.reset();
+                loginError.style.display = 'none';
+            });
+
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const user = document.getElementById('loginUsername').value.trim();
+                const pass = document.getElementById('loginPassword').value.trim();
+
+                try {
+                    let isValid = false;
+
+                    // Plaintext check as fallback in case the browser environment blocks crypto (e.g. over HTTP network IP)
+                    if (user === 'milkymistdairy@gmail.com' && pass === 'd@iry_@dmin_$ece$hop') {
+                        isValid = true;
+                    }
+
+                    // Secure SHA-256 Check
+                    if (window.crypto && window.crypto.subtle) {
+                        const hashedUser = await hashSHA256(user);
+                        const hashedPass = await hashSHA256(pass);
+                        if (hashedUser === '43e1777e8e69445530ce7be83aa529511197ecd507c27dbbe8a0dc807c927d4a' &&
+                            hashedPass === '1ff32da54f5a4679a815a7f49c63635dc59b375d5438e0e77151b64a69d8c48d') {
+                            isValid = true;
+                        }
+                    }
+
+                    if (isValid) {
+                        // Success
+                        loginModal.style.display = 'none';
+                        loginForm.reset();
+                        loginError.style.display = 'none';
+                        showLoginBtn.style.display = 'none';
+                        userView.style.display = 'none';
+                        adminView.style.display = 'block';
+                    } else {
+                        loginError.style.display = 'block';
+                        loginError.textContent = 'Invalid credentials!';
+                    }
+                } catch (error) {
+                    console.error("Login error:", error.message);
+                    loginError.style.display = 'block';
+                    loginError.textContent = "Error: " + error.message;
+                }
+            });
+
+            logoutBtn.addEventListener('click', () => {
+                adminView.style.display = 'none';
+                userView.style.display = 'block';
+                showLoginBtn.style.display = 'block';
+            });
+
+            // --- RENDER LOGIC ---
+            function renderProducts() {
+                userProductList.innerHTML = '';
+                adminProductList.innerHTML = '';
+
+                if (products.length === 0) {
+                    userProductList.innerHTML = '<div class="empty-state">Currently no products available. Check back later!</div>';
+                    adminProductList.innerHTML = '<div class="empty-state">No products added yet.</div>';
+                    return;
+                }
+
+                // Sort products by newest first
+                products.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+                products.forEach(product => {
+                    // Render for User
+                    const userItem = document.createElement('div');
+                    userItem.className = 'product-item';
+                    userItem.innerHTML = `
+                        <div class="product-info">
+                            <h3>${product.name}</h3>
+                            <div class="product-details">${product.quantity} ${product.unit}</div>
+                        </div>
+                        <div class="price-container">
+                            <div class="product-price">₹${product.price}</div>
+                        </div>
+                    `;
+                    userProductList.appendChild(userItem);
+
+                    // Render for Admin
+                    const adminItem = document.createElement('div');
+                    adminItem.className = 'product-item';
+                    adminItem.innerHTML = `
+                        <div class="product-info">
+                            <h3>${product.name}</h3>
+                            <div class="product-details">${product.quantity} ${product.unit}</div>
+                        </div>
+                        <div class="price-container">
+                            <div class="product-price">₹${product.price}</div>
+                            <button class="delete-btn" data-id="${product.id}" aria-label="Delete">×</button>
+                        </div>
+                    `;
+                    adminProductList.appendChild(adminItem);
+                });
+
+                // Attach delete event listeners for Admin
+                document.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const id = e.target.getAttribute('data-id');
+                        const isConfirmed = confirm("Are you sure you want to delete this product?");
+                        if (!isConfirmed) return;
+
+                        try {
+                            await deleteDoc(doc(db, "products", id));
+                        } catch (error) {
+                            console.error("Error deleting product: ", error);
+                            alert("Failed to delete product. Check console.");
+                        }
+                    });
+                });
+            }
+
+            // Real-time listener for Firestore Database
+            const productsCollection = collection(db, "products");
+            onSnapshot(productsCollection, (snapshot) => {
+                products = [];
+                snapshot.forEach((doc) => {
+                    products.push({ id: doc.id, ...doc.data() });
+                });
+                renderProducts();
+            }, (error) => {
+                console.error("Error fetching products: ", error);
+                userProductList.innerHTML = '<div class="empty-state">Error connecting to database. Is Firebase configured?</div>';
+                adminProductList.innerHTML = '<div class="empty-state">Error connecting to database. Is Firebase configured?</div>';
+            });
+
+            // Handle adding a new product
+            productForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const newProduct = {
+                    name: document.getElementById('productName').value,
+                    quantity: document.getElementById('quantity').value,
+                    unit: document.getElementById('unit').value,
+                    price: document.getElementById('price').value,
+                    createdAt: new Date().getTime()
+                };
+
+                const submitBtn = productForm.querySelector('button[type="submit"]');
+                const originalText = submitBtn.textContent;
+                submitBtn.textContent = 'Adding...';
+                submitBtn.disabled = true;
+
+                try {
+                    await addDoc(productsCollection, newProduct);
+
+                    productForm.reset();
+                    // Explicitly clear fields just to be safe
+                    document.getElementById('productName').value = '';
+                    document.getElementById('quantity').value = '';
+                    document.getElementById('price').value = '';
+
+                    // Focus on the first input to be ready for the next product
+                    document.getElementById('productName').focus();
+                } catch (error) {
+                    console.error("Error adding document: ", error);
+                    alert("Failed to add product: " + error.message);
+                } finally {
+                    submitBtn.textContent = 'Add Product';
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
